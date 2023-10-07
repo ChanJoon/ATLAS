@@ -11,10 +11,23 @@ import pyzbar
 from pyzbar.pyzbar import decode
 from PIL import Image, ImageTk
 
+from encoder import Encoder
+from qrCodeReceiver import QrCodeReceiver
+
 ## MARK: ------------ GPIO ------------
 
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
+
+# Encoder
+EncoderA = 2    # White
+EncoderB = 3    # Orange
+
+## ------------ Encoder Class callback ------------
+def measure(value, direction):
+	print(f"Value: {value}, Direction: {direction}")
+
+enc = Encoder(EncoderA, EncoderB, measure)
 
 # 24V dc motor
 dcMotorPWM = 19
@@ -81,44 +94,12 @@ if M2 > 30:
     M2 = 30
 
 t2 = 0
-    
-## MARK: -------- QR Code --------
-
-class qrCodeReceiver:
-    def __init__(self):
-        self.data = None
-        self.connect_server()
-        
-    def connect_server(self):
-        while True:
-            try:
-                self.socket_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                self.socket_server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                self.socket_server.bind(("localhost", 1234))
-                self.socket_server.listen(1)
-                self.connection, self.address = self.socket_server.accept()
-                break
-            except ConnectionRefusedError:
-                print("Connection refused. Retrying in 1 second...")
-                time.sleep(1)
-            except TimeoutError:
-                print("Connection timeout. Retrying in 1 second...")
-                time.sleep(1)
-            except Exception as e:
-                print(f"Error occurred: {str(e)}")
-                break
-
-    def receive_data(self):
-        while True:
-            self.data = self.connection.recv(1024).decode()
-            if self.data is not None and self.data != "":
-                print("Received data:", self.data)
             
 # qr_receiver = qrCodeReceiver()
 
 ## MARK: -------- QRCodeScan --------
 
-enableQRScan = False
+# enableQRScan = False
 
 class QRCodeScanner:
     def __init__(self):
@@ -127,6 +108,7 @@ class QRCodeScanner:
         self.running = True
         self.frame = None
         self.resized_frame = None
+        self.enableQRScan = False
         
         self.name = '순수현'
         self.height = "178"
@@ -161,6 +143,8 @@ class QRCodeScanner:
                     # TODO: 실제 시연 data쓸거면 주석 해제하고 QR 정보 맞게 잘 넣어야 함.
                     # self.parse(qr_code_data)
                     # time.sleep(10.0)
+                    
+                    # TODO: dimmedLabel, scanLabel, toggleAutoMode NOT IN THIS CLASS; SHOULD BE REFACTORED
                     dimmedLabel.place_forget()
                     scanLabel.place_forget()
                     toggleAutoMode()
@@ -168,7 +152,7 @@ class QRCodeScanner:
                 
                 scan_frame = Image.fromarray(resized_frame)
                 scan_image = ImageTk.PhotoImage(scan_frame)
-                if enableQRScan:
+                if self.enableQRScan:
                     scanLabel.config(image=scan_image)
 
     def stop(self):
@@ -593,11 +577,11 @@ def tiltDownButtonDidRelease(event):
     # linearPWM.ChangeDutyCycle(0)
 
 def scanQRButtonDidTap():
-    global enableQRScan
+    # global enableQRScan
     print("scanQRButtonDidTap")
     dimmedLabel.place(relx = 0.5, rely = 0.5, width = 1024, height = 600, anchor = "center")
     scanLabel.place(relx=0.5, rely=0.5, width=400, height=400, anchor="center")
-    # enableQRScan = True
+    # scanner.enableQRScan = True
     time.sleep(3.0)
     dimmedLabel.place_forget()
     scanLabel.place_forget()
