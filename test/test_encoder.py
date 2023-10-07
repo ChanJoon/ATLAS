@@ -1,6 +1,9 @@
 import RPi.GPIO as GPIO
-from Encoder import Encoder
 import time
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
+from encoder import Encoder
 
 def measure(value, direction):
 	print(f"Value: {value}, Direction: {direction}")
