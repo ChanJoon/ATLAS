@@ -9,10 +9,10 @@ def measure(value, direction):
 	print(f"Value: {value}, Direction: {direction}")
 
 # Encoder
-EncoderA = 17    # White
-EncoderB = 22    # Orange
-# EncoderA = 24    # White
-# EncoderB = 25    # Orange
+# EncoderA = 22    # White
+# EncoderB = 27    # Orange
+EncoderA = 24    # White
+EncoderB = 25    # Orange
 GPIO.setmode(GPIO.BCM)
 
 enc = Encoder(EncoderA, EncoderB, measure)

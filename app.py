@@ -20,8 +20,8 @@ GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 
 # DC Motor Encoder
-dcMotorEncoderA = 17    # White
-dcMotorEncoderB = 22    # Orange
+dcMotorEncoderA = 22    # White
+dcMotorEncoderB = 27    # Orange
 
 # linear Actuator Encoder
 linearEncoderA = 24
@@ -32,7 +32,7 @@ def measure(value, direction):
 	print(f"Value: {value}, Direction: {direction}")
 
 encMotor = Encoder(dcMotorEncoderA, dcMotorEncoderB, measure)
-linearMotor = Encoder(linearEncoderA, linearEncoderB, measure)
+encLinear = Encoder(linearEncoderA, linearEncoderB, measure)
 
 # 24V dc motor
 dcMotorPWM = 13
@@ -175,129 +175,98 @@ scanner = QRCodeScanner()
 
 ## MARK: -------- AutoController --------
 
-#TODO: Encoder 관련 함수로 재사용 (stepMotor~ 변수들 모두 제거해야 함)
-def moveStepMotor( isWiden, stepCount):
-    # TODO 모터방향 어느쪽인지 체크
-    # widen or narrow / count maximum
-    if isWiden:
-        GPIO.output(stepMotorLeftDIR, GPIO.LOW)
-        GPIO.output(stepMotorRightDIR, GPIO.HIGH)
-    else:
-        GPIO.output(stepMotorLeftDIR, GPIO.HIGH)
-        GPIO.output(stepMotorRightDIR, GPIO.LOW)
+beforeShoulderHeight = 0.0
+beforeTiltAngle = 0.0
+shoulderToStandHeight = 0.0
+afterShoulderHeight = 0.0
+
+def setting(shoulderWidth, shoulderHeight):
+    """
+    처음 환자 어깨 높이로 어깨걸이 높이 조정
+    추후, 어깨걸이 높이 조정 전 체스트 가이드 너비 조절 추가 필요
+    """
+    global dcMotorPWM, beforeShoulderHeight
     
-    count = 0
-    step_delay = 0.01
-    while True:
-        # One step
-        GPIO.output(stepMotorLeftSTEP, GPIO.HIGH)
-        time.sleep(step_delay)
-        GPIO.output(stepMotorRightSTEP, GPIO.HIGH)
-        time.sleep(step_delay)
-        GPIO.output(stepMotorLeftSTEP, GPIO.LOW)
-        time.sleep(step_delay)
-        GPIO.output(stepMotorRightSTEP, GPIO.LOW)
-        time.sleep(step_delay)
-        count += 1
-
-        if count == stepCount:
-            time.sleep(1)
-            break
-    return
-
-def initiate():
-    print("Initiate autoControl Mode")
-    global linearDIR, dcMotorDIR, dcMotorPWM, linearPWM, dcMotorBottomLimitSwitch, linearBottomLimitSwitch
-    countLinearLimit = 0
-    countdcMotorLimit = 0
-    temp = False
-    temp2 = False
-    while True:
-        print("linearBottom: ", GPIO.input(linearBottomLimitSwitch))
-        print("dcMotorBottom: ", GPIO.input(dcMotorBottomLimitSwitch))
-        # TiltDownButton: 액츄에이터 틸트다운
-        if GPIO.input(linearBottomLimitSwitch) != 1:
-            GPIO.output(linearDIR, GPIO.HIGH)
-            linearPWM.ChangeDutyCycle(M2)
-        else:
-            print("linear bottom limit switch")
-            countLinearLimit += 1
-        # DownButton: 볼스크류 하강
-        if GPIO.input(dcMotorBottomLimitSwitch) != 1:
-            GPIO.output(dcMotorDIR, GPIO.HIGH)
-            dcMotorPWM.ChangeDutyCycle(M1)
-        else:
-            print("dc motor bottom limit switch")
-            countdcMotorLimit += 1
-        
-        if countLinearLimit == 2:
-            linearPWM.ChangeDutyCycle(0)
-            temp = True
-        
-        if countdcMotorLimit == 2:
-            dcMotorPWM.ChangeDutyCycle(0)
-            temp2 = True
-        
-        if temp and temp2:
-            break
-        
-        # 볼스크류, 액츄에이터 초기화 후 체스트 가이드 넓히기
-        # moveStepMotor(isWiden=True, stepCount=100)
-
-def setting( t0_shoulder, t0_dcMotor):
-    global dcMotorPWM
-    ### i. 초기조정
     # TODO: 체스트 가이드 너비 조절
-    # moveStepMotor(isWiden=False, stepCount=t0_shoulder)
     
-    # UpButton: 볼스크류 상승
+    ### UpButton: 볼스크류 상승
+    beforeShoulderHeight = encMotor.value # For accurate control
     GPIO.output(dcMotorDIR, GPIO.LOW)
     dcMotorPWM.ChangeDutyCycle(M1)
-    print("setting > dcMotorPWM activated")
-    for _ in range(t0_dcMotor):
-        time.sleep(1.0)
-        # TODO: 리미트 스위치 대신 엔코더 값으로 조정하도록 수정
-        if GPIO.input(dcMotorTopLimitSwitch) == 1:
-            break
-    dcMotorPWM.ChangeDutyCycle(0)
-    print(time.time())
-    print("setting > dcMotorPWM deactivated")
+    print("Setting > dcMotorPWM activated")
     
+    try:
+        motorUpTime = time.time()
+        while True:
+            current = time.time()
+            # TODO: value 양수 음수 및 값 체크, 적절한 시간 차이 체크
+            if (encMotor.value > beforeShoulderHeight + shoulderHeight) or (current - motorUpTime > 1.0):
+                break
+            print("Setting > Uptime: {}", current - motorUpTime)
+            time.sleep(0.1)
+    except Exception as e:
+        print("Setting> Error {}!", e)
+        # TODO: Kill methods
+    dcMotorPWM.ChangeDutyCycle(0)
+    print("Setting > dcMotorPWM deactivated")
+    
+    # Enable autoStanding
     autoAdjustingButton.configure(image = adjustedImage, state = "disabled")
     autoStandingButton.bind(clicked, autoStandingButtonDidTap)
     autoStandingButton.bind(released, autoStandingButtonDidRelease)
     autoStandingButton.config(image = autoStandingImage, state = "normal")
     autoSittingButton.config(image = autoSittingDisabledImage, state = "disabled")
-    print("setting done")
+    print("Setting done")
     
-def stand( t1_linear, t1_dcMotor):
-    global linearPWM, dcMotorPWM, linearTopLimitSwitch, dcMotorTopLimitSwitch, t2
-    ### ii. 기립
-    # TiltUpButton: 액츄에이터 틸트업
+def stand(tiltAngle, standHeight):
+    """
+    1. 리니어 액츄에이터를 구동하여 환자의 상체를 기울임
+    2. DC 모터를 구동하여 환자를 기립시킴
+    """
+    global linearPWM, dcMotorPWM, beforeTiltAngle, shoulderToStandHeight, afterShoulderHeight
+    
+    ### TiltUpButton: 액츄에이터 틸트업
+    beforeTiltAngle = encLinear.value
     GPIO.output(linearDIR, GPIO.LOW)
     linearPWM.ChangeDutyCycle(M2)
-    print("standing > linearPWM activated")
-    for _ in range(t1_linear):
-        time.sleep(1.0)
-        if GPIO.input(linearTopLimitSwitch) == 1:
-            break
+    print("Stand > linearPWM activated")
+    
+    try:
+        linearTiltUpTime = time.time()
+        while True:
+            current = time.time()
+            # TODO: value 양수 음수 및 값 체크, 적절한 시간 차이 체크
+            if (encLinear.value > beforeTiltAngle + tiltAngle) or (current - linearTiltUpTime > 1.0):
+                break
+            print("Stand > tiltUptime: {}", current - linearTiltUpTime)
+            time.sleep(0.1)
+    except Exception as e:
+        print("Stand tiltUp > Error {}!", e)
+        # TODO: Kill methods
     linearPWM.ChangeDutyCycle(0)
-    print("standing > linearPWM deactivated")
+    print("Stand > linearPWM deactivated")
+    
     time.sleep(1)
-    # UpButton: 볼스크류 상승
-    t2_start = time.time()
+    
+    ### UpButton: 볼스크류 상승
+    afterShoulderHeight = encMotor.value  # Save the current encoder value to utilize in "use()"
     GPIO.output(dcMotorDIR, GPIO.LOW)
     dcMotorPWM.ChangeDutyCycle(M1)
-    print("standing > dcMotorPWM activated")
-    for _ in range(t1_dcMotor):
-        time.sleep(1.0)
-        #TODO: 리미트 스위치 대신 엔코더 값으로 수정
-        if GPIO.input(dcMotorTopLimitSwitch) == 1:
-            break
+    print("Stand > dcMotorPWM activated")
+    try:
+        motorUpTime = time.time()
+        while True:
+            current = time.time()
+            # TODO: value 양수 음수 및 값 체크, 적절한 시간 차이 체크
+            if (encMotor.value > afterShoulderHeight + standHeight) or (current - motorUpTime > 1.0):
+                break
+            print("Stand > motorUptime: {}", current - motorUpTime)
+            time.sleep(0.1)
+    except Exception as e:
+        print("Stand motorUp > Error {}!", e)
+        # TODO: Kill methods
     dcMotorPWM.ChangeDutyCycle(0)
-    print("standing > dcMotorPWM deactivated")
-    t2 = int(time.time() - t2_start) # 볼스크류 상승한 시간
-    print("t2: ", t2)
+    print("Stand > dcMotorPWM deactivated")
     
     
     autoStandingButton.config(image = autoStandingDisabledImage, state = "disabled")
@@ -306,49 +275,71 @@ def stand( t1_linear, t1_dcMotor):
     autoSittingButton.bind(released, autoSittingButtonDidRelease)
     print("standing done")
     
-def sit(t2_linear, t2):
-    global dcMotorPWM, linearPWM, dcMotorDIR, linearDIR, linearTopLimitSwitch, linearBottomLimitSwitch
-    ### iii. 착석
-    # DownButton: 볼스크류 하강(상승한 만큼)
+def sit(afterShoulderHeight, beforeTiltAngle, beforeShoulderHeight):
+    """
+    1. 볼스크류가 하강한 만큼 DC 모터를 구동함
+    2. 리니어 액츄에이터를 구동하여 기울어 있는 환자의 상체를 세움
+    3. DC 모터를 구동하여 어깨 높이에 맞게 조정한 어깨 걸이를 낮춤
+    """
+    global dcMotorPWM, linearPWM, dcMotorDIR, linearDIR
+    
+    ### DownButton: 볼스크류 하강(상승한 만큼)
     GPIO.output(dcMotorDIR, GPIO.HIGH)
     dcMotorPWM.ChangeDutyCycle(M1)
-    print("sitting > dcMotorPWM activated")
-    print("t2:: ", t2)
-    for _ in range(t2):
-        time.sleep(1.0)
-        if GPIO.input(dcMotorBottomLimitSwitch) == 1:
-            break
+    print("Sit > dcMotorPWM activated")
+    try:
+        motorDownTime = time.time()
+        while True:
+            current = time.time()
+            # TODO: value 양수 음수 및 값 체크, 적절한 시간 차이 체크
+            if encMotor.value < afterShoulderHeight or current - motorDownTime > 1.0:
+                break
+            print("Sit > motorDownTime 1: {}", current - motorDownTime)
+            time.sleep(0.1)
+    except Exception as e:
+        print("Sit motorDown 1 > Error {}!", e)
+        # TODO: Kill methods
     dcMotorPWM.ChangeDutyCycle(0)
-    print("sitting > dcMotorPWM deactivated")
-    # TiltDownButton: 액츄에이터 틸트다운
+    print("Sit > dcMotorPWM deactivated")
+    
+    ### TiltDownButton: 액츄에이터 틸트다운
     GPIO.output(linearDIR, GPIO.HIGH)
     linearPWM.ChangeDutyCycle(M2)
-    print("sitting > linearPWM activated")
-    for _ in range(t2_linear):
-        #TODO 하강 시간체크
-        time.sleep(1.0)
-        # if GPIO.input(linearBottomLimitSwitch) == 1:
-        #     print("linearBottom LimitSwitch activated")
-        #     break
-        # if GPIO.input(linearTopLimitSwitch) == 1:
-        #     print("linearTop LimitSwitch activated")
-            # linearPWM.ChangeDutyCycle(0)
-            # break
+    print("Sit > linearPWM activated")
+    try:
+        linearTiltDownTime = time.time()
+        while True:
+            current = time.time()
+            # TODO: value 양수 음수 및 값 체크, 적절한 시간 차이 체크
+            if encLinear.value > beforeTiltAngle or current - linearTiltDownTime > 1.0:
+                break
+            print("Sit > linearDownTime: {}", current - linearTiltDownTime)
+            time.sleep(0.1)
+    except Exception as e:
+        print("Sit linearDown > Error {}!", e)
+        # TODO: Kill methods
     linearPWM.ChangeDutyCycle(0)
-    print("sitting > linearPWM deactivated")
+    print("Sit > linearPWM deactivated")
     time.sleep(1)
     
     dcMotorPWM.ChangeDutyCycle(M1)
-    print("sitting > dcMotorPWM activated")
-    for _ in range(2):
-        time.sleep(1.0)
-        # if GPIO.input(linearTopLimitSwitch) == 1:
-        #     break
+    print("Sit > dcMotorPWM activated")
+    try:
+        motorDownTime = time.time()
+        while True:
+            current = time.time()
+            # TODO: value 양수 음수 및 값 체크, 적절한 시간 차이 체크
+            if (encMotor.value < beforeShoulderHeight) or (current - motorDownTime > 1.0):
+                break
+            print("Sit > motorDownTime 2: {}", current - motorDownTime)
+            time.sleep(0.1)
+    except Exception as e:
+        print("Sit motorDown 2 > Error {}!", e)
+        # TODO: Kill methods
     dcMotorPWM.ChangeDutyCycle(0)
-    print("sitting > dcMotorPWM deactivated")
-    initiate()
+    print("Sit > dcMotorPWM deactivated")
     toggleAutoMode()
-    print("sitting done")
+    print("Sit done")
     
 def stop():
     global linearPWM, dcMotorPWM, canceled
@@ -419,7 +410,6 @@ limitTopPressed = False
 def widenButtonDidTap(event):
     widenButton.config(image = widenPressedImage)
     print("widenButtonDidTap")
-    # autoControl.moveStepMotor(isWiden=True, stepCount=100)
 
 def widenButtonIsPressing():
     print("widenButtonIsPressing")
@@ -432,7 +422,6 @@ def widenButtonDidRelease(event):
 def narrowButtonDidTap(event):
     narrowButton.config(image = narrowPressedImage)
     print("narrowButtonDidTap")
-    # autoControl.moveStepMotor(isWiden=False, stepCount=100)
 
 def narrowButtonIsPressing():
     print("narrowButtonIsPressing")
@@ -535,7 +524,8 @@ def scanQRButtonDidTap():
 def autoStandingButtonDidTap(event):
     print("autoStandingButtonDidTap")
     autoStandingButton.config(image = autoStandingPressedImage)
-    stand(scanner.tiltUpTime, scanner.upTime)
+    # TODO: scanner 변수 추가하기
+    stand(scanner.tiltAngle, scanner.standHeight)
 
 def autoStandingButtonIsPressing():
     print("autoStandingButtonIsPressing")
@@ -548,7 +538,8 @@ def autoSittingButtonDidTap(event):
     global t2
     print("autoSittingButtonDidTap")
     autoSittingButton.config(image = autoSittingPressedImage)
-    sit(scanner.tiltDownTime, t2)
+    # TODO: scanner 변수 추가하기
+    sit(afterShoulderHeight, beforeTiltAngle, beforeShoulderHeight)
 
 def autoSittingButtonIsPressing():
     print("autoSittingButtonIsPressing")
@@ -687,6 +678,7 @@ def autoAdjusting():
     global isAnimating
     isAnimating = True
     animateAdjustingGIF(0)
+    # TODO: scanner 변수 추가하기
     setting(scanner.shoulderWidth, scanner.shoulderHeight)
 
 def animateAdjustingGIF(frameIndex):
