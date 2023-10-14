@@ -10,7 +10,7 @@ def stopSwitchCallback(channel):
 
 GPIO.setmode(GPIO.BCM)
 
-stopSwitchRed = 27
+stopSwitchRed = 23
 GPIO.setup(stopSwitchRed, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 GPIO.add_event_detect(stopSwitchRed, GPIO.BOTH, callback=stopSwitchCallback)
 

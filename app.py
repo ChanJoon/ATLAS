@@ -19,43 +19,28 @@ from qrCodeReceiver import QrCodeReceiver
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 
-# Encoder
-EncoderA = 2    # White
-EncoderB = 3    # Orange
+# DC Motor Encoder
+dcMotorEncoderA = 17    # White
+dcMotorEncoderB = 22    # Orange
+
+# linear Actuator Encoder
+linearEncoderA = 24
+linearEncoderB = 25
 
 ## ------------ Encoder Class callback ------------
 def measure(value, direction):
 	print(f"Value: {value}, Direction: {direction}")
 
-enc = Encoder(EncoderA, EncoderB, measure)
+encMotor = Encoder(dcMotorEncoderA, dcMotorEncoderB, measure)
+linearMotor = Encoder(linearEncoderA, linearEncoderB, measure)
 
 # 24V dc motor
-dcMotorPWM = 19
-dcMotorDIR = 6
+dcMotorPWM = 13
+dcMotorDIR = 19
 
 # 12V linear actuator
-linearPWM = 9
-linearDIR = 26
-
-# step motor L
-# stepMotorLeftEN = 25
-stepMotorLeftSTEP = 7
-stepMotorLeftDIR = 8
-
-# step motor R
-# stepMotorRightEN  = 16
-stepMotorRightSTEP = 23
-stepMotorRightDIR = 24
-
-# limit switch
-dcMotorTopLimitSwitch = 7 # for ball skrew T
-dcMotorBottomLimitSwitch = 8 # for ball skrew B
-linearTopLimitSwitch = 17 # for rear profile
-linearBottomLimitSwitch = 27 # for rear profile
-
-# 환자 기준
-stepMotorLeftLimitButton = 3
-stepMotorRightLimitButton = 4
+linearPWM = 10
+linearDIR = 9
 
 M1 = 30 # 24V dc motor pwm
 M2 = 30 # 12V linear actuator pwm
@@ -67,19 +52,6 @@ GPIO.setup(dcMotorPWM, GPIO.OUT)
 GPIO.setup(dcMotorDIR, GPIO.OUT)
 GPIO.setup(linearPWM, GPIO.OUT)
 GPIO.setup(linearDIR, GPIO.OUT)
-# GPIO.setup(stepMotorLeftEN, GPIO.OUT)
-GPIO.setup(stepMotorLeftSTEP, GPIO.OUT)
-GPIO.setup(stepMotorLeftDIR, GPIO.OUT)
-# GPIO.setup(stepMotorRightEN, GPIO.OUT)
-GPIO.setup(stepMotorRightSTEP, GPIO.OUT)
-GPIO.setup(stepMotorRightDIR, GPIO.OUT)
-
-GPIO.setup(dcMotorBottomLimitSwitch, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-GPIO.setup(dcMotorTopLimitSwitch, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-GPIO.setup(linearTopLimitSwitch, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-GPIO.setup(linearBottomLimitSwitch, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-GPIO.setup(stepMotorLeftLimitButton, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-GPIO.setup(stepMotorRightLimitButton, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
 # PWM setup
 dcMotorPWM = GPIO.PWM(dcMotorPWM, 100)
@@ -203,7 +175,7 @@ scanner = QRCodeScanner()
 
 ## MARK: -------- AutoController --------
 
-            
+#TODO: Encoder 관련 함수로 재사용 (stepMotor~ 변수들 모두 제거해야 함)
 def moveStepMotor( isWiden, stepCount):
     # TODO 모터방향 어느쪽인지 체크
     # widen or narrow / count maximum
@@ -231,10 +203,6 @@ def moveStepMotor( isWiden, stepCount):
         if count == stepCount:
             time.sleep(1)
             break
-        # if GPIO.input(stepMotorLeftLimitButton) == 1:
-        #     break
-        # if GPIO.input(stepMotorRightLimitButton) == 1:
-        #     break
     return
 
 def initiate():
@@ -279,14 +247,16 @@ def initiate():
 def setting( t0_shoulder, t0_dcMotor):
     global dcMotorPWM
     ### i. 초기조정
-    # TODO: 스텝모터 엔코더 제어로 어깨 간격 맞게 들어오기
+    # TODO: 체스트 가이드 너비 조절
     # moveStepMotor(isWiden=False, stepCount=t0_shoulder)
+    
     # UpButton: 볼스크류 상승
     GPIO.output(dcMotorDIR, GPIO.LOW)
     dcMotorPWM.ChangeDutyCycle(M1)
     print("setting > dcMotorPWM activated")
     for _ in range(t0_dcMotor):
         time.sleep(1.0)
+        # TODO: 리미트 스위치 대신 엔코더 값으로 조정하도록 수정
         if GPIO.input(dcMotorTopLimitSwitch) == 1:
             break
     dcMotorPWM.ChangeDutyCycle(0)
@@ -321,6 +291,7 @@ def stand( t1_linear, t1_dcMotor):
     print("standing > dcMotorPWM activated")
     for _ in range(t1_dcMotor):
         time.sleep(1.0)
+        #TODO: 리미트 스위치 대신 엔코더 값으로 수정
         if GPIO.input(dcMotorTopLimitSwitch) == 1:
             break
     dcMotorPWM.ChangeDutyCycle(0)
@@ -472,19 +443,14 @@ def narrowButtonDidRelease(event):
 
 def upButtonDidTap(event):
     print("upButtonDidTap")
-    if GPIO.input(dcMotorTopLimitSwitch) != 1:
-        GPIO.output(dcMotorDIR, GPIO.LOW)
-        dcMotorPWM.ChangeDutyCycle(M1)
-    elif GPIO.input(dcMotorTopLimitSwitch) == 1:
-        print("dcMotorUpLimit pressed")
-        dcMotorPWM.ChangeDutyCycle(0)
+    GPIO.output(dcMotorDIR, GPIO.LOW)
+    dcMotorPWM.ChangeDutyCycle(M1)
+    #TODO: 일정 엔코더 값을 넘으면 안전을 위해 강제 정지
 
 def upButtonIsPressing():
     print("upButtonIsPressing")
     upButton.config(image = upPressedImage)
-    if GPIO.input(dcMotorTopLimitSwitch) == 1:
-        print("dcMotorUpLimit pressed")
-        dcMotorPWM.ChangeDutyCycle(0)
+    #TODO: 일정 엔코더 값을 넘으면 안전을 위해 강제 정지
 
 def upButtonDidRelease(event):
     global dcTopPressed
@@ -495,19 +461,14 @@ def upButtonDidRelease(event):
 
 def downButtonDidTap(event):
     print("downButtonDidTap")
-    if GPIO.input(dcMotorBottomLimitSwitch) != 1:
-        GPIO.output(dcMotorDIR, GPIO.HIGH)
-        dcMotorPWM.ChangeDutyCycle(M1)
-    elif GPIO.input(dcMotorBottomLimitSwitch) == 1:
-        print("dcMotorBottomLimitSwitch Pressed")
-        dcMotorPWM.ChangeDutyCycle(0)
+    GPIO.output(dcMotorDIR, GPIO.HIGH)
+    dcMotorPWM.ChangeDutyCycle(M1)
+    #TODO: 일정 엔코더 값을 넘으면 안전을 위해 강제 정지
 
 def downButtonIsPressing():
     print("downButtonIsPressing")
     downButton.config(image = downPressedImage)
-    if GPIO.input(dcMotorBottomLimitSwitch) == 1:
-        print("dcMotorBottomLimitSwitch Pressed")
-        dcMotorPWM.ChangeDutyCycle(0)
+    #TODO: 일정 엔코더 값을 넘으면 안전을 위해 강제 정지
 
 def downButtonDidRelease(event):
     global dcBottomPressed
@@ -518,12 +479,9 @@ def downButtonDidRelease(event):
 
 def tiltUpButtonDidTap(event):
     print("tiltUpButtonDidTap")
-    if GPIO.input(linearTopLimitSwitch) != 1:
-        GPIO.output(linearDIR, GPIO.LOW)
-        linearPWM.ChangeDutyCycle(M2)
-    elif GPIO.input(linearTopLimitSwitch) == 1:
-        print("linearTopLimitSwitch Pressed")
-        linearPWM.ChangeDutyCycle(0)
+    GPIO.output(linearDIR, GPIO.LOW)
+    linearPWM.ChangeDutyCycle(M2)
+    #TODO: 일정 엔코더 값을 넘으면 안전을 위해 강제 정지
         
     # GPIO.output(linearDIR, GPIO.LOW)
     # linearPWM.ChangeDutyCycle(M2)
@@ -533,11 +491,7 @@ def tiltUpButtonIsPressing():
     limitTopPressed = True
     print("tiltUpButtonIsPressing")
     tiltUpButton.config(image = tiltUpPressedImage)
-
-    if GPIO.input(linearTopLimitSwitch) == 1:
-        print("linearTopLimitSwitch Pressed")
-        linearPWM.ChangeDutyCycle(0)
-        
+    #TODO: 일정 엔코더 값을 넘으면 안전을 위해 강제 정지
 
 def tiltUpButtonDidRelease(event):
     global limitTopPressed
@@ -548,25 +502,15 @@ def tiltUpButtonDidRelease(event):
 
 def tiltDownButtonDidTap(event):
     print("tiltDownButtonDidTap")
-    if GPIO.input(linearBottomLimitSwitch) != 1:
-        GPIO.output(linearDIR, GPIO.HIGH)
-        linearPWM.ChangeDutyCycle(M2)
-    # elif GPIO.input(linearBottomLimitSwitch) == 1:
-    #     print("linearBottomLimitSwitch Pressed")
-    #     linearPWM.ChangeDutyCycle(0)
-        
     GPIO.output(linearDIR, GPIO.HIGH)
     linearPWM.ChangeDutyCycle(M2)
+    #TODO: 일정 엔코더 값을 넘으면 안전을 위해 강제 정지
 
 def tiltDownButtonIsPressing():
     global limitBottomPressed
     limitBottomPressed = True
     print("tiltDownButtonIsPressing")
     tiltDownButton.config(image = tiltDownPressedImage)
-    
-    # if GPIO.input(linearBottomLimitSwitch) == 1:
-    #     print("linearBottomLimitSwitch Pressed")
-    #     linearPWM.ChangeDutyCycle(0)
         
 
 def tiltDownButtonDidRelease(event):
@@ -637,7 +581,7 @@ def setLayout():
     autoStandingButton.grid(row = 2, column = 4)
     autoSittingButton.grid(row = 2, column = 5, padx = 30)
     
-    # TODO: For test version
+    # TODO: For Test Version
     # exitAutoModeButton.grid(row = 0, column = 4, padx = 30)
     pauseButton.grid(row = 0, column = 0, padx = 30, pady = 30)
     
@@ -757,31 +701,6 @@ def stopAutoAdjustingButtonAnimation():
     isAnimating = False
     window.after(500, lambda: autoAdjustingButton.config(image = adjustedImage))
     
-def checkLimitSwitch():
-    global dcMotorTopLimitSwitch, dcMotorBottomLimitSwitch, linearBottomLimitSwitch, linearPWM, dcMotorPWM, canceled, dcTopPressed, dcBottomPressed, limitTopPressed, limitBottomPressed
-    # print("check limitSwitch: ", GPIO.input(linearTopLimitSwitch), GPIO.input(linearBottomLimitSwitch))
-    if not canceled:
-        if dcTopPressed and GPIO.input(dcMotorTopLimitSwitch) == 1:
-            print("dcMotorTopLimitSwitch Pressed")
-            dcMotorPWM.ChangeDutyCycle(0)
-            dcTopPressed = False
-            
-        elif dcBottomPressed and GPIO.input(dcMotorBottomLimitSwitch) == 1:
-            print("dcMotorBottomLimitSwitch Pressed")
-            dcMotorPWM.ChangeDutyCycle(0)
-            dcBottomPressed = False
-            
-        elif limitTopPressed and GPIO.input(linearTopLimitSwitch) == 1:
-            print("linearTopLimitSwitch Pressed")
-            linearPWM.ChangeDutyCycle(0)
-            limitTopPressed = False
-            
-        # elif limitBottomPressed and GPIO.input(linearBottomLimitSwitch) == 1:
-        #     print("linearBottomLimitSwitch Pressed")
-        #     linearPWM.ChangeDutyCycle(0)
-        #     limitBottomPressed = False
-        
-    window.after(500, checkLimitSwitch)
 
 
 ## MARK: -------- UI Components --------
@@ -1002,6 +921,9 @@ pauseButton = Button(
     highlightthickness=0,
     command = stop,
 )
+#TODO: pauseButton 애니메이션 추가하기
+# pauseButton.bind(clicked, pauseButtonDidTap)
+# pauseButton.bind(released, pauseButtonDidRelease)
 
 infoLabelFont = font.Font(size = 20, weight = "bold")
 infoLabel = Label(
@@ -1027,12 +949,10 @@ scanLabel = Label(
 
 setLayout()
 
-window.title("STD GUI")
+window.title("ATLAS GUI")
 window.geometry("1024x600")
 window.configure(bg = background)
 window.resizable(False, False)
-
-checkLimitSwitch()
 
 scanner.start()
 window.mainloop()
