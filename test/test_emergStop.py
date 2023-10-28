@@ -4,8 +4,8 @@ import time
 def stopSwitchCallback(channel):
 	if GPIO.input(stopSwitchRed):
 		print(f"ON {GPIO.input(stopSwitchRed)}")
-	else:
-		print(f"Hello I'm {GPIO.input(stopSwitchRed)}")
+	# elif GPIO.input(stopSwitchRed) == 0:
+		# print(f"Hello I'm {GPIO.input(stopSwitchRed)}")
 
 
 GPIO.setmode(GPIO.BCM)
