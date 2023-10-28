@@ -59,6 +59,9 @@ dcMotorPWM.start(0)
 linearPWM = GPIO.PWM(linearPWM, 100)
 linearPWM.start(0)
 
+disableKey = 23
+GPIO.setup(disableKey, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+
 if M1 > 80:
     M1 = 80
 
@@ -71,7 +74,7 @@ t2 = 0
 
 ## MARK: -------- QRCodeScan --------
 
-# enableQRScan = False
+enableQRScan = False
 
 class QRCodeScanner:
     def __init__(self):
@@ -86,11 +89,15 @@ class QRCodeScanner:
         self.height = "178"
         self.weight = "64"
         
-        self.shoulderWidth = 0
-        self.shoulderHeight = 8
         self.tiltUpTime = 9
         self.tiltDownTime = 7
         self.upTime = 9
+        
+        #TODO: Update new variables
+        self.shoulderWidth = 0
+        self.shoulderHeight = 8
+        self.tiltAngle = 20
+        self.standHeight = 30
 
     def start(self):
         threading.Thread(target=self.process_frames).start()
@@ -126,6 +133,7 @@ class QRCodeScanner:
                 scan_image = ImageTk.PhotoImage(scan_frame)
                 if self.enableQRScan:
                     scanLabel.config(image=scan_image)
+                # scanLabel.config(image=scan_image)    
 
     def stop(self):
         self.running = False
@@ -193,6 +201,7 @@ def setting(shoulderWidth, shoulderHeight):
     beforeShoulderHeight = encMotor.value # For accurate control
     GPIO.output(dcMotorDIR, GPIO.LOW)
     dcMotorPWM.ChangeDutyCycle(M1)
+    print("beforeShoulderHeight: {}", beforeShoulderHeight)
     print("Setting > dcMotorPWM activated")
     
     try:
@@ -510,15 +519,15 @@ def tiltDownButtonDidRelease(event):
     # linearPWM.ChangeDutyCycle(0)
 
 def scanQRButtonDidTap():
-    # global enableQRScan
+    global enableQRScan
     print("scanQRButtonDidTap")
     dimmedLabel.place(relx = 0.5, rely = 0.5, width = 1024, height = 600, anchor = "center")
     scanLabel.place(relx=0.5, rely=0.5, width=400, height=400, anchor="center")
-    # scanner.enableQRScan = True
-    time.sleep(3.0)
-    dimmedLabel.place_forget()
-    scanLabel.place_forget()
-    toggleAutoMode()
+    scanner.enableQRScan = True
+    # time.sleep(1.0)
+    # dimmedLabel.place_forget()
+    # scanLabel.place_forget()
+    # toggleAutoMode()
 
 
 def autoStandingButtonDidTap(event):
@@ -547,6 +556,22 @@ def autoSittingButtonIsPressing():
 def autoSittingButtonDidRelease(event):
     print("autoSittingButtonDidRelease")
     autoSittingButton.config(image = autoSittingImage)
+    
+def powerOff():
+    print("Power Off!")
+    window.quit()
+
+def disabledKeyEnabled(channel):
+    if GPIO.input(disableKey):
+        disableManualButtons()
+        scanQRButton.config(image = scanQRDisabledImage)
+        disabledLabel.place(relx = 0.5, rely = 0.5, width = 864, height = 460, anchor = "center")
+    else:
+        disabledLabel.place_forget()
+        enableManualButtons()
+        scanQRButton.config(image = scanQRImage)
+
+GPIO.add_event_detect(disableKey, GPIO.BOTH, callback=disabledKeyEnabled)
 
 # Layout Methods
 
@@ -574,7 +599,8 @@ def setLayout():
     
     # TODO: For Test Version
     # exitAutoModeButton.grid(row = 0, column = 4, padx = 30)
-    pauseButton.grid(row = 0, column = 0, padx = 30, pady = 30)
+    powerButton.grid(row = 0, column = 0, padx = 30, pady = 30)
+    pauseButton.grid(row = 0, column = 1, padx = 30, pady = 30)
     
 
 # UI Methods
@@ -831,6 +857,7 @@ tiltDownButton.bind(clicked, tiltDownButtonDidTap)
 tiltDownButton.bind(released, tiltDownButtonDidRelease)
 
 scanQRImage = PhotoImage(file = "./images/scanQR.png")
+scanQRDisabledImage = PhotoImage(file = "./images/scanQR_disabled.png")
 scanQRButton = Button(
     image = scanQRImage,
     width = buttonSize,
@@ -917,6 +944,23 @@ pauseButton = Button(
 # pauseButton.bind(clicked, pauseButtonDidTap)
 # pauseButton.bind(released, pauseButtonDidRelease)
 
+powerButtonImage = PhotoImage(file = "./images/power.png")
+powerButton = Button(
+    image = powerButtonImage,
+    width = buttonSize,
+    height = buttonSize,
+    borderwidth = 0,
+    highlightthickness = 0,
+    command = powerOff,
+)
+
+disabledLabelImage = PhotoImage(file = "./images/disabled.png")
+disabledLabel = Label(
+    image = disabledLabelImage,
+    borderwidth = 0,
+    highlightthickness = 0,
+)
+
 infoLabelFont = font.Font(size = 20, weight = "bold")
 infoLabel = Label(
     # text = f"{scanner.height} cm\n{scanner.weight} kg",
@@ -953,3 +997,4 @@ scanner.stop()
 dcMotorPWM.stop()
 linearPWM.stop()
 GPIO.cleanup()
+window.destroy()
