@@ -6,13 +6,13 @@ import RPi.GPIO as GPIO
 import time
 import socket
 import threading
-import cv2
+# import cv2
 import pyzbar
 from pyzbar.pyzbar import decode
 from PIL import Image, ImageTk
 
 from encoder import Encoder
-from qrCodeReceiver import QrCodeReceiver
+# from qrCodeReceiver import QrCodeReceiver
 
 ## MARK: ------------ GPIO ------------
 
@@ -41,9 +41,12 @@ dcMotorDIR = 19
 # 12V linear actuator
 linearPWM = 10
 linearDIR = 9
+linearChestPWM = 12
+linearChestDIR = 16
 
 M1 = 30 # 24V dc motor pwm
 M2 = 30 # 12V linear actuator pwm
+M3 = 20 # 12V chest guide pwm
 steps = 3200 # step motor steps
 delay = 0.00001 # step motor delay
 
@@ -52,12 +55,16 @@ GPIO.setup(dcMotorPWM, GPIO.OUT)
 GPIO.setup(dcMotorDIR, GPIO.OUT)
 GPIO.setup(linearPWM, GPIO.OUT)
 GPIO.setup(linearDIR, GPIO.OUT)
+GPIO.setup(linearChestPWM, GPIO.OUT)
+GPIO.setup(linearChestDIR, GPIO.OUT)
 
 # PWM setup
 dcMotorPWM = GPIO.PWM(dcMotorPWM, 100)
 dcMotorPWM.start(0)
 linearPWM = GPIO.PWM(linearPWM, 100)
 linearPWM.start(0)
+linearChestPWM = GPIO.PWM(linearChestPWM, 100)
+linearChestPWM.start(0)
 
 disableKey = 23
 GPIO.setup(disableKey, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
@@ -67,6 +74,9 @@ if M1 > 80:
 
 if M2 > 30:
     M2 = 30
+    
+if M3 > 20:
+    M3 = 20
 
 t2 = 0
             
@@ -78,8 +88,10 @@ enableQRScan = False
 
 class QRCodeScanner:
     def __init__(self):
+        '''
         self.camera = cv2.VideoCapture(0)
         self.ret, self.frame = self.camera.read()
+        '''
         self.running = True
         self.frame = None
         self.resized_frame = None
@@ -89,16 +101,13 @@ class QRCodeScanner:
         self.height = "178"
         self.weight = "64"
         
-        self.tiltUpTime = 9
-        self.tiltDownTime = 7
-        self.upTime = 9
-        
         #TODO: Update new variables
         self.shoulderWidth = 0
-        self.shoulderHeight = 8
-        self.tiltAngle = 20
-        self.standHeight = 30
-
+        # self.shoulderHeight = 1950
+        self.shoulderHeight = 0
+        self.tiltAngle = 8
+        self.standHeight = 5500
+    '''
     def start(self):
         threading.Thread(target=self.process_frames).start()
         return self
@@ -149,37 +158,29 @@ class QRCodeScanner:
             key = key.strip()
             value = value.strip()
 
-            if key == "name":
+            if key == "이름":
                 self.name = value
-            elif key == "height":
+            elif key == "신장":
                 self.height = value
-            elif key == 'weight':
+            elif key == '체중':
                 self.weight = value
-                
-            elif key == "t0":
-                self.t0 = int(value)
-            elif key == "t1":
-                self.t1 = int(value)
-            elif key == "t2":
-                self.t2 = int(value)
                 
             elif key == "어깨너비":
                 self.shoulderWidth = int(value)
             elif key == "어깨높이":
                 self.shoulderHeight = int(value)
             elif key == "숙이기":
-                self.tiltUpTime = int(value)
+                self.tiltAngle = int(value)
             elif key == "세우기":
-                self.tiltDownTime = int(value)
+                self.standHeight = int(value)
             elif key == "기립":
                 self.upTime = int(value)
             print(key, value)
 
         # infoLabel.config(text = f"{scanner.height} cm\n{scanner.weight} kg")
-        
+    '''
 
 scanner = QRCodeScanner()
-
 
 ## MARK: -------- AutoController --------
 
@@ -201,20 +202,20 @@ def setting(shoulderWidth, shoulderHeight):
     beforeShoulderHeight = encMotor.value # For accurate control
     GPIO.output(dcMotorDIR, GPIO.LOW)
     dcMotorPWM.ChangeDutyCycle(M1)
-    print("beforeShoulderHeight: {}", beforeShoulderHeight)
+    print(f"beforeShoulderHeight: {beforeShoulderHeight}")
     print("Setting > dcMotorPWM activated")
     
     try:
         motorUpTime = time.time()
         while True:
             current = time.time()
-            # TODO: value 양수 음수 및 값 체크, 적절한 시간 차이 체크
-            if (encMotor.value > beforeShoulderHeight + shoulderHeight) or (current - motorUpTime > 1.0):
+            if (encMotor.value > beforeShoulderHeight + shoulderHeight):
                 break
-            print("Setting > Uptime: {}", current - motorUpTime)
+            print(f"Setting > encVal: {encMotor.value}")
+            print(f"Setting > Uptime: {current - motorUpTime}")
             time.sleep(0.1)
     except Exception as e:
-        print("Setting> Error {}!", e)
+        print(f"Setting> Error {e}!")
         # TODO: Kill methods
     dcMotorPWM.ChangeDutyCycle(0)
     print("Setting > dcMotorPWM deactivated")
@@ -244,13 +245,13 @@ def stand(tiltAngle, standHeight):
         linearTiltUpTime = time.time()
         while True:
             current = time.time()
-            # TODO: value 양수 음수 및 값 체크, 적절한 시간 차이 체크
-            if (encLinear.value > beforeTiltAngle + tiltAngle) or (current - linearTiltUpTime > 1.0):
+            # 틸팅하면 엔코더 (-)
+            if (encLinear.value < beforeTiltAngle - tiltAngle):
                 break
-            print("Stand > tiltUptime: {}", current - linearTiltUpTime)
+            print(f"Stand > tiltUptime: {current - linearTiltUpTime}")
             time.sleep(0.1)
     except Exception as e:
-        print("Stand tiltUp > Error {}!", e)
+        print(f"Stand tiltUp > Error {e}!")
         # TODO: Kill methods
     linearPWM.ChangeDutyCycle(0)
     print("Stand > linearPWM deactivated")
@@ -266,13 +267,12 @@ def stand(tiltAngle, standHeight):
         motorUpTime = time.time()
         while True:
             current = time.time()
-            # TODO: value 양수 음수 및 값 체크, 적절한 시간 차이 체크
-            if (encMotor.value > afterShoulderHeight + standHeight) or (current - motorUpTime > 1.0):
+            if (encMotor.value > afterShoulderHeight + standHeight):
                 break
-            print("Stand > motorUptime: {}", current - motorUpTime)
+            print(f"Stand > motorUptime: {current - motorUpTime}")
             time.sleep(0.1)
     except Exception as e:
-        print("Stand motorUp > Error {}!", e)
+        print(f"Stand motorUp > Error {e}!")
         # TODO: Kill methods
     dcMotorPWM.ChangeDutyCycle(0)
     print("Stand > dcMotorPWM deactivated")
@@ -300,13 +300,12 @@ def sit(afterShoulderHeight, beforeTiltAngle, beforeShoulderHeight):
         motorDownTime = time.time()
         while True:
             current = time.time()
-            # TODO: value 양수 음수 및 값 체크, 적절한 시간 차이 체크
-            if encMotor.value < afterShoulderHeight or current - motorDownTime > 1.0:
+            if encMotor.value < afterShoulderHeight:
                 break
-            print("Sit > motorDownTime 1: {}", current - motorDownTime)
+            print(f"Sit > motorDownTime 1: {current - motorDownTime}")
             time.sleep(0.1)
     except Exception as e:
-        print("Sit motorDown 1 > Error {}!", e)
+        print(f"Sit motorDown 1 > Error {e}!")
         # TODO: Kill methods
     dcMotorPWM.ChangeDutyCycle(0)
     print("Sit > dcMotorPWM deactivated")
@@ -319,13 +318,12 @@ def sit(afterShoulderHeight, beforeTiltAngle, beforeShoulderHeight):
         linearTiltDownTime = time.time()
         while True:
             current = time.time()
-            # TODO: value 양수 음수 및 값 체크, 적절한 시간 차이 체크
-            if encLinear.value > beforeTiltAngle or current - linearTiltDownTime > 1.0:
+            if encLinear.value > beforeTiltAngle:
                 break
-            print("Sit > linearDownTime: {}", current - linearTiltDownTime)
+            print(f"Sit > linearDownTime: {current - linearTiltDownTime}")
             time.sleep(0.1)
     except Exception as e:
-        print("Sit linearDown > Error {}!", e)
+        print(f"Sit linearDown > Error {e}!")
         # TODO: Kill methods
     linearPWM.ChangeDutyCycle(0)
     print("Sit > linearPWM deactivated")
@@ -337,13 +335,12 @@ def sit(afterShoulderHeight, beforeTiltAngle, beforeShoulderHeight):
         motorDownTime = time.time()
         while True:
             current = time.time()
-            # TODO: value 양수 음수 및 값 체크, 적절한 시간 차이 체크
-            if (encMotor.value < beforeShoulderHeight) or (current - motorDownTime > 1.0):
+            if (encMotor.value < beforeShoulderHeight):
                 break
-            print("Sit > motorDownTime 2: {}", current - motorDownTime)
+            print(f"Sit > motorDownTime 2: {current - motorDownTime}")
             time.sleep(0.1)
     except Exception as e:
-        print("Sit motorDown 2 > Error {}!", e)
+        print(f"Sit motorDown 2 > Error {e}!")
         # TODO: Kill methods
     dcMotorPWM.ChangeDutyCycle(0)
     print("Sit > dcMotorPWM deactivated")
@@ -354,7 +351,11 @@ def stop():
     global linearPWM, dcMotorPWM, canceled
     linearPWM.ChangeDutyCycle(0)
     dcMotorPWM.ChangeDutyCycle(0)
+    linearChestPWM.ChangeDutyCycle(0)
     canceled = True
+    '''
+    TODO: 수동일 때와 자동일 때 일시정지 버튼 이미지 변환 조건문 추가
+    '''
     upButton.config(image = upImage)
     downButton.config(image = downImage)
     tiltUpButton.config(image = tiltUpImage)
@@ -415,25 +416,31 @@ limitBottomPressed = False
 limitTopPressed = False
 
 # Button Methods
-
+'''
+TODO 체스트가이드 제어
+'''
 def widenButtonDidTap(event):
-    widenButton.config(image = widenPressedImage)
     print("widenButtonDidTap")
+    GPIO.output(linearChestDIR, GPIO.HIGH)
+    linearChestPWM.ChangeDutyCycle(M3)
 
 def widenButtonIsPressing():
     print("widenButtonIsPressing")
+    widenButton.config(image = widenPressedImage)
 
 def widenButtonDidRelease(event):
-    widenButton.config(image = widenImage)
     print("widenButtonDidRelease")
+    widenButton.config(image = widenImage)
        
 
 def narrowButtonDidTap(event):
-    narrowButton.config(image = narrowPressedImage)
     print("narrowButtonDidTap")
+    GPIO.output(linearChestDIR, GPIO.LOW)
+    linearChestPWM.ChangeDutyCycle(M3)
 
 def narrowButtonIsPressing():
     print("narrowButtonIsPressing")
+    narrowButton.config(image = narrowPressedImage)
 
 def narrowButtonDidRelease(event):
     narrowButton.config(image = narrowImage)
@@ -521,13 +528,14 @@ def tiltDownButtonDidRelease(event):
 def scanQRButtonDidTap():
     global enableQRScan
     print("scanQRButtonDidTap")
-    dimmedLabel.place(relx = 0.5, rely = 0.5, width = 1024, height = 600, anchor = "center")
-    scanLabel.place(relx=0.5, rely=0.5, width=400, height=400, anchor="center")
-    scanner.enableQRScan = True
-    # time.sleep(1.0)
-    # dimmedLabel.place_forget()
-    # scanLabel.place_forget()
-    # toggleAutoMode()
+    ''' QR code scan enabled
+    # dimmedLabel.place(relx = 0.5, rely = 0.5, width = 1024, height = 600, anchor = "center")
+    # scanLabel.place(relx=0.5, rely=0.5, width=400, height=400, anchor="center")
+    # scanner.enableQRScan = True
+    '''
+    # Auto control debug
+    toggleAutoMode()
+    ''' TODO QR코드 안보이게 '''
 
 
 def autoStandingButtonDidTap(event):
@@ -578,16 +586,18 @@ GPIO.add_event_detect(disableKey, GPIO.BOTH, callback=disabledKeyEnabled)
 def setLayout():
     window.grid_columnconfigure(3, weight=1)
     
-    # widenButton.grid(row = 0, column = 0, padx = 30, pady = 30)
-    # narrowButton.grid(row = 0, column = 1)
-    # armpitLabel.grid(row = 0, column = 2, padx = 30)
+    widenButton.grid(row = 0, column = 0, padx = 30, pady = 30)
+    narrowButton.grid(row = 0, column = 1)
+    armpitLabel.grid(row = 0, column = 2, padx = 30)
     spacer1.grid(row = 0, column = 3, sticky = "ew")
-    scanQRButton.grid(row = 0, column = 5, padx = 30)
+    pauseButton.grid(row = 0, column = 4, padx = 30, pady = 30)
+    powerButton.grid(row = 0, column = 5, padx = 30, pady = 30)
 
     upButton.grid(row = 1, column = 0, padx = 30)
     downButton.grid(row = 1, column = 1)
     updownLabel.grid(row = 1, column= 2, padx = 30)
     spacer2.grid(row = 1, column = 3, sticky = "ew")
+    scanQRButton.grid(row = 1, column = 4, padx = 30)
     autoAdjustingButton.grid(row = 1, column = 5, padx = 30)
 
     tiltUpButton.grid(row = 2, column = 0, padx = 30, pady = 30)
@@ -599,22 +609,20 @@ def setLayout():
     
     # TODO: For Test Version
     # exitAutoModeButton.grid(row = 0, column = 4, padx = 30)
-    powerButton.grid(row = 0, column = 0, padx = 30, pady = 30)
-    pauseButton.grid(row = 0, column = 1, padx = 30, pady = 30)
     
 
 # UI Methods
 
 def enableManualButtons():
-    # armpitLabel.config(image = armpitImage)
+    armpitLabel.config(image = armpitImage)
     updownLabel.config(image = updownImage)
     tiltLabel.config(image = tiltImage)
-    # widenButton.config(image = widenImage, state = "normal")
-    # widenButton.bind(clicked, widenButtonDidTap)
-    # widenButton.bind(released, widenButtonDidRelease)
-    # narrowButton.config(image = narrowImage, state = "normal")
-    # narrowButton.bind(clicked, narrowButtonDidTap)
-    # narrowButton.bind(released, narrowButtonDidRelease)
+    widenButton.config(image = widenImage, state = "normal")
+    widenButton.bind(clicked, widenButtonDidTap)
+    widenButton.bind(released, widenButtonDidRelease)
+    narrowButton.config(image = narrowImage, state = "normal")
+    narrowButton.bind(clicked, narrowButtonDidTap)
+    narrowButton.bind(released, narrowButtonDidRelease)
     upButton.config(image = upImage, state = "normal")
     upButton.bind(clicked, upButtonDidTap)
     upButton.bind(released, upButtonDidRelease)
@@ -629,15 +637,15 @@ def enableManualButtons():
     tiltDownButton.bind(released, tiltDownButtonDidRelease)
 
 def disableManualButtons():
-    # armpitLabel.config(image = armpitDisabledImage)
+    armpitLabel.config(image = armpitDisabledImage)
     updownLabel.config(image = updownDisabledImage)
     tiltLabel.config(image = tiltDisabledImage)
-    # widenButton.config(image = widenDisabledImage, state = "disabled")
-    # widenButton.unbind(clicked)
-    # widenButton.unbind(released)
-    # narrowButton.config(image = narrowDisabledImage, state = "disabled")
-    # narrowButton.unbind(clicked)
-    # narrowButton.unbind(released)
+    widenButton.config(image = widenDisabledImage, state = "disabled")
+    widenButton.unbind(clicked)
+    widenButton.unbind(released)
+    narrowButton.config(image = narrowDisabledImage, state = "disabled")
+    narrowButton.unbind(clicked)
+    narrowButton.unbind(released)
     upButton.config(image = upDisabledImage, state = "disabled")
     upButton.unbind(clicked)
     upButton.unbind(released)
@@ -990,10 +998,10 @@ window.geometry("1024x600")
 window.configure(bg = background)
 window.resizable(False, False)
 
-scanner.start()
+# scanner.start()
 window.mainloop()
 
-scanner.stop()
+# scanner.stop()
 dcMotorPWM.stop()
 linearPWM.stop()
 GPIO.cleanup()
